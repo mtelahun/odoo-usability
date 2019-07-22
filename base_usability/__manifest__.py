@@ -37,4 +37,5 @@ _display_full_address on res.partner which are useful for reporting.
         'views/base_view.xml',
         ],
     'installable': True,
+    'auto_install': True,
 }
