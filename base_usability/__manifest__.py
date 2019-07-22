@@ -21,4 +21,5 @@
         'views/ir_sequence.xml',
         ],
     'installable': True,
+    'auto_install': True,
 }
