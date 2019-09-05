@@ -30,8 +30,8 @@
         <xpath expr="//field[@name='move_ids_without_package']/tree/field[@name='location_id']" position="replace"/>
         <xpath expr="//field[@name='move_ids_without_package']/tree/field[@name='location_dest_id']" position="replace"/>
         <xpath expr="//field[@name='move_ids_without_package']/tree/field[@name='product_id']" position="after">
-            <field name="location_id" groups="stock.group_stock_multi_locations" readonly="1"/>
-            <field name="location_dest_id" groups="stock.group_stock_multi_locations" readonly="1"/>
+            <field name="location_id" groups="stock.group_stock_multi_locations"/>
+            <field name="location_dest_id" groups="stock.group_stock_multi_locations"/>
         </xpath>
         <xpath expr="//field[@name='move_line_ids_without_package']/tree/field[@name='location_id']" position="attributes">
             <attribute name="attrs">{}</attribute>
@@ -117,6 +117,18 @@
 
 <record id="stock.action_picking_tree" model="ir.actions.act_window">
     <field name="view_mode">tree,kanban,form,calendar,pivot</field> <!-- add pivot -->
+</record>
+
+<record id="view_picking_type_tree" model="ir.ui.view">
+    <field name="name">usability.stock.picking.type.tree</field>
+    <field name="model">stock.picking.type</field>
+    <field name="inherit_id" ref="stock.view_picking_type_tree"/>
+    <field name="arch" type="xml">
+        <field name="warehouse_id" position="after">
+            <field name="default_location_src_id"/>
+            <field name="default_location_dest_id"/>
+        </field>
+    </field>
 </record>
 
 <!-- Display route in stock moves -->
@@ -235,6 +247,24 @@
     </field>
 </record>
 
+<record id="view_move_line_tree" model="ir.ui.view">
+    <field name="name">stock_usability.stock.move.line.tree</field>
+    <field name="model">stock.move.line</field>
+    <field name="inherit_id" ref="stock.view_move_line_tree" />
+    <field name="arch" type="xml">
+        <field name="qty_done" position="before">
+            <field name="product_qty" sum="1" string="Reserved Qty"/>
+        </field>
+        <field name="qty_done" position="attributes">
+            <attribute name="sum">1</attribute>
+        </field>
+    </field>
+</record>
+
+<record id="stock.stock_move_line_action" model="ir.actions.act_window">
+    <field name="context">{'search_default_done': 1}</field>
+</record>
+
 <record id="view_warehouse" model="ir.ui.view">
     <field name="name">stock.usability.warehouse.form</field>
     <field name="model">stock.warehouse</field>
@@ -266,6 +296,10 @@
             <group string="Group By" name="groupby">
                 <filter name="usage_groupby" string="Location Type"
                     context="{'group_by': 'usage'}"/>
+                <filter name="removal_strategy_groupby" string="Removal Strategy"
+                    context="{'group_by': 'removal_strategy_id'}"/>
+                <filter name="putaway_strategy_groupby" string="Put Away Strategy"
+                    context="{'group_by': 'putaway_strategy_id'}"/>
             </group>
         </filter>
     </field>
@@ -319,6 +353,21 @@ should be able to access it. So I add a menu entry under Inventory Control. -->
     </field>
 </record>
 
+<record id="view_inventory_tree" model="ir.ui.view">
+    <field name="name">usability.stock.inventory.tree</field>
+    <field name="model">stock.inventory</field>
+    <field name="inherit_id" ref="stock.view_inventory_tree"/>
+    <field name="arch" type="xml">
+        <field name="date" position="after">
+            <field name="location_id" groups="stock.group_stock_multi_locations"/>
+        </field>
+        <tree position="attributes">
+            <attribute name="decoration-info">state == 'draft'</attribute>
+            <attribute name="decoration-warning">state == 'confirm'</attribute>
+        </tree>
+    </field>
+</record>
+
 <record id="view_stock_quant_tree" model="ir.ui.view">
     <field name="name">stock.usability.quant.tree</field>
     <field name="model">stock.quant</field>
@@ -333,6 +382,17 @@ should be able to access it. So I add a menu entry under Inventory Control. -->
     </field>
 </record>
 
+<record id="view_stock_quant_form" model="ir.ui.view">
+    <field name="name">stock.usability.quant.form</field>
+    <field name="model">stock.quant</field>
+    <field name="inherit_id" ref="stock.view_stock_quant_form"/>
+    <field name="arch" type="xml">
+        <div name="button_box" position="inside">
+            <button class="oe_stat_button" icon="fa-arrows-v" type="object" name="action_stock_move_lines_reserved" string="Reservations"/>
+        </div>
+    </field>
+</record>
+
 <!-- more detailed stock.move tree view when using the button from product form -->
 <!-- TODO TEST
 <record id="stock.act_product_stock_move_open" model="ir.actions.act_window">
@@ -343,7 +403,7 @@ should be able to access it. So I add a menu entry under Inventory Control. -->
 but it forces a group by on products that you can't remove
 So I create another "regular" Quants" menu entry -->
 <record id="stock_quant_action" model="ir.actions.act_window">
-    <field name="name">Quants List</field>
+    <field name="name">Quants</field>
     <field name="res_model">stock.quant</field>
     <field name="view_mode">tree,form,pivot</field>
     <field name="context">{'search_default_internal_loc': 1}</field>
@@ -352,5 +412,10 @@ So I create another "regular" Quants" menu entry -->
 <menuitem id="stock_quant_menu" action="stock_quant_action"
     parent="stock.menu_stock_inventory_control"
     sequence="135"/>
+
+<record id="stock.action_production_lot_form" model="ir.actions.act_window">
+    <field name="context">{}</field> <!-- remove group by product -->
+</record>
+
 
 </odoo>
