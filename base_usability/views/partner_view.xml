@@ -12,10 +12,6 @@
     <field name="model">res.partner</field>
     <field name="inherit_id" ref="base.view_partner_form"/>
     <field name="arch" type="xml">
-        <!-- Wider 'name' field -->
-        <xpath expr="//sheet/div[hasclass('oe_title')]" position="attributes">
-            <attribute name="style">width: 650px;</attribute>
-        </xpath>
         <xpath expr="//field[@name='child_ids']/form//field[@name='email']" position="attributes">
             <attribute name="widget">email</attribute>
         </xpath>
@@ -61,6 +57,9 @@
             <!-- for 'ref', change '=' to 'start with' -->
             <attribute name="filter_domain">['|','|',('display_name','ilike',self),('ref','=ilike',self + '%'),('email','ilike',self)]</attribute>
         </field>
+        <filter name="inactive" position="before">
+            <separator/>
+        </filter>
     </field>
 </record>
 

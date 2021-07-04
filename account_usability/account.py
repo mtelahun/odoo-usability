@@ -6,6 +6,7 @@ from odoo import models, fields, api, _
 from odoo.tools import float_compare, float_is_zero
 from odoo.tools.misc import formatLang
 from odoo.exceptions import UserError, ValidationError
+from odoo.osv import expression
 from odoo import SUPERUSER_ID
 import logging
 
@@ -82,7 +83,7 @@ class AccountInvoice(models.Model):
     # top of the screen
     # That's why we have to cut the name_get() when it's too long
     def name_get(self):
-        old_res = super(AccountInvoice, self).name_get()
+        old_res = super().name_get()
         res = []
         for old_re in old_res:
             name = old_re[1]
@@ -102,9 +103,8 @@ class AccountInvoice(models.Model):
     # 2) the 'name' field of the account.move.line is used in the overdue
     # letter, and '/' is not meaningful for our customer !
 # TODO mig to v12
-#    @api.multi
 #    def action_move_create(self):
-#        res = super(AccountInvoice, self).action_move_create()
+#        res = super().action_move_create()
 #        for inv in self:
 #            self._cr.execute(
 #                "UPDATE account_move_line SET name= "
@@ -215,7 +215,15 @@ class AccountInvoiceLine(models.Model):
 class AccountJournal(models.Model):
     _inherit = 'account.journal'
 
-    @api.multi
+    hide_bank_statement_balance = fields.Boolean(
+        string='Hide Bank Statement Balance',
+        help="You may want to enable this option when your bank "
+        "journal is generated from a bank statement file that "
+        "doesn't handle start/end balance (QIF for instance) and "
+        "you don't want to enter the start/end balance manually: it "
+        "will prevent the display of wrong information in the accounting "
+        "dashboard and on bank statements.")
+
     @api.depends(
         'name', 'currency_id', 'company_id', 'company_id.currency_id', 'code')
     def name_get(self):
@@ -261,7 +269,6 @@ class AccountJournal(models.Model):
 class AccountAccount(models.Model):
     _inherit = 'account.account'
 
-    @api.multi
     @api.depends('name', 'code')
     def name_get(self):
         if self._context.get('account_account_show_code_only'):
@@ -270,7 +277,7 @@ class AccountAccount(models.Model):
                 res.append((record.id, record.code))
             return res
         else:
-            return super(AccountAccount, self).name_get()
+            return super().name_get()
 
     # https://github.com/odoo/odoo/issues/23040
     # TODO mig to v12
@@ -311,7 +318,6 @@ class AccountAccount(models.Model):
         logger.info("END of the script 'fix bank and cash account types'")
         return True
 
-    # TODO mig to v12
     @api.model
     def create_account_groups(self, level=2, name_prefix=u'Comptes '):
         '''Should be launched by a script. Make sure the account_group module is installed
@@ -353,7 +359,6 @@ class AccountAccount(models.Model):
 class AccountAnalyticAccount(models.Model):
     _inherit = 'account.analytic.account'
 
-    @api.multi
     def name_get(self):
         if self._context.get('analytic_account_show_code_only'):
             res = []
@@ -361,7 +366,7 @@ class AccountAnalyticAccount(models.Model):
                 res.append((record.id, record.code or record.name))
             return res
         else:
-            return super(AccountAnalyticAccount, self).name_get()
+            return super().name_get()
 
     _sql_constraints = [(
         'code_company_unique',
@@ -508,8 +513,9 @@ class AccountBankStatement(models.Model):
     end_date = fields.Date(
         compute='_compute_dates', string='End Date', readonly=True,
         store=True)
+    hide_bank_statement_balance = fields.Boolean(
+        related='journal_id.hide_bank_statement_balance', readonly=True)
 
-    @api.multi
     @api.depends('line_ids.date')
     def _compute_dates(self):
         for st in self:
@@ -517,7 +523,14 @@ class AccountBankStatement(models.Model):
             st.start_date = dates and min(dates) or False
             st.end_date = dates and max(dates) or False
 
-    @api.multi
+    def _balance_check(self):
+        for stmt in self:
+            if stmt.hide_bank_statement_balance:
+                continue
+            else:
+                super(AccountBankStatement, stmt)._balance_check()
+        return True
+
     @api.depends('name', 'start_date', 'end_date')
     def name_get(self):
         res = []
@@ -555,15 +568,14 @@ class AccountBankStatementLine(models.Model):
     #        search_reconciliation_proposition=False, context=None):
     #    # Make variable name shorted for PEP8 !
     #    search_rec_prop = search_reconciliation_proposition
-    #    return super(AccountBankStatementLine, self).\
+    #    return super().\
     #        get_data_for_reconciliations(
     #            cr, uid, ids, excluded_ids=excluded_ids,
     #            search_reconciliation_proposition=search_rec_prop,
     #            context=context)
 
     def _prepare_reconciliation_move(self, move_ref):
-        vals = super(AccountBankStatementLine, self).\
-            _prepare_reconciliation_move(move_ref)
+        vals = super()._prepare_reconciliation_move(move_ref)
         # By default, ref contains the name of the statement + name of the
         # statement line. It causes 2 problems:
         # 1) The 'ref' field is too big
@@ -581,13 +593,13 @@ class AccountBankStatementLine(models.Model):
     def show_account_move(self):
         self.ensure_one()
         action = self.env['ir.actions.act_window'].for_xml_id(
-            'account', 'action_move_journal_line')
+            'account', 'action_move_line_form')
         if self.journal_entry_ids:
             action.update({
                 'views': False,
                 'view_id': False,
                 'view_mode': 'form,tree',
-                'res_id': self.journal_entry_ids[0].id,
+                'res_id': self.journal_entry_ids[0].move_id.id,
                 })
             return action
         else:
@@ -659,3 +671,55 @@ class AccountIncoterms(models.Model):
         for rec in self:
             res.append((rec.id, '[%s] %s' % (rec.code, rec.name)))
         return res
+
+
+class AccountReconciliation(models.AbstractModel):
+    _inherit = 'account.reconciliation.widget'
+
+    # Add ability to filter by account code in the work interface of the
+    # bank statement
+    @api.model
+    def _domain_move_lines(self, search_str):
+        str_domain = super()._domain_move_lines(search_str)
+        account_code_domain = [('account_id.code', '=ilike', search_str + '%')]
+        str_domain = expression.OR([str_domain, account_code_domain])
+        return str_domain
+
+    @api.model
+    def _domain_move_lines_for_reconciliation(
+            self, st_line, aml_accounts, partner_id,
+            excluded_ids=None, search_str=False):
+        domain = super()._domain_move_lines_for_reconciliation(
+            st_line, aml_accounts, partner_id,
+            excluded_ids=excluded_ids, search_str=search_str)
+        # We want to replace a domain item by another one
+        if ('payment_id', '<>', False) in domain:
+            position = domain.index(('payment_id', '<>', False))
+            domain[position] = ['journal_id', '=', st_line.journal_id.id]
+        return domain
+
+
+class ResConfigSettings(models.TransientModel):
+    _inherit = 'res.config.settings'
+
+    transfer_account_id = fields.Many2one(
+        related='company_id.transfer_account_id', readonly=False)
+
+
+class AccountChartTemplate(models.Model):
+    _inherit = "account.chart.template"
+
+    @api.model
+    def _prepare_transfer_account_template(self):
+        """Change the type of default account in order to be
+        compliant with _check_account_type_on_bank_journal
+        Used at installation of payment modules like stripe
+        See https://github.com/akretion/odoo-usability/issues/115
+        """
+        vals = super()._prepare_transfer_account_template()
+        current_assets_type = self.env.ref(
+            'account.data_account_type_liquidity', raise_if_not_found=False)
+        vals.update({
+            'user_type_id': current_assets_type and current_assets_type.id or False,
+        })
+        return vals
